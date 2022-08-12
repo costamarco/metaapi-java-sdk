@@ -19,6 +19,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import cloud.metaapi.sdk.clients.models.IsoTime;
 import cloud.metaapi.sdk.util.JsonMapper;
 import cloud.metaapi.sdk.util.ServiceProvider;
+import io.github.artsok.RepeatedIfExceptionsTest;
 
 /**
  * Tests {@link SynchronizationThrottler}
@@ -237,7 +238,7 @@ class SynchronizationThrottlerTest {
   /**
    * Test {@link SynchronizationThrottler#scheduleSynchronize(String, ObjectNode)}
    */
-  @Test
+  @RepeatedIfExceptionsTest(repeats = 3)
   void testRemovesSynchronizationsFromQueue() throws InterruptedException {
     throttler.scheduleSynchronize("accountId1", provideRequest("test1")).join();
     throttler.scheduleSynchronize("accountId2", provideRequest("test2")).join();
@@ -272,30 +273,46 @@ class SynchronizationThrottlerTest {
    * Tests {@link SynchronizationThrottler#scheduleSynchronize(String, ObjectNode)}
    */
   @Test
-  void testRemovesExpiredSynchronizationsFromQueue() throws InterruptedException {
+  void testRemovesWaitingExpiredSynchronizationsFromQueue() throws Exception {
+    throttler.stop();
+    ServiceProvider.setNowInstantMock(null);
+    throttler = new SynchronizationThrottler(websocketClient, 0, new SynchronizationThrottler.Options() {{
+      synchronizationTimeoutInSeconds = 2;
+      queueTimeoutInSeconds = 1;
+    }});
+    throttler.start();
+    
     throttler.scheduleSynchronize("accountId1", provideRequest("test1")).join();
     throttler.scheduleSynchronize("accountId2", provideRequest("test2")).join();
     throttler.scheduleSynchronize("accountId3", provideRequest("test3"));
-    Thread.sleep(50);
-    throttler.scheduleSynchronize("accountId4", provideRequest("test4"));
-    Thread.sleep(50);
-    for (int i = 0; i < 20; ++i) {
-      tick(8000);
-      throttler.updateSynchronizationId("test1");
-      throttler.updateSynchronizationId("test2");
-    }
-    Thread.sleep(50);
-    throttler.scheduleSynchronize("accountId5", provideRequest("test5"));
-    for (int i = 0; i < 20; ++i) {
-      tick(8000);
-      throttler.updateSynchronizationId("test1");
-      throttler.updateSynchronizationId("test2");
-    }
-    tick(33000);
-    Mockito.verify(websocketClient, Mockito.times(3)).rpcRequest(Mockito.anyString(), Mockito.any(), Mockito.any());
+    Thread.sleep(3000);
+    
     Mockito.verify(websocketClient).rpcRequest("accountId1", provideRequest("test1"), null);
     Mockito.verify(websocketClient).rpcRequest("accountId2", provideRequest("test2"), null);
-    Mockito.verify(websocketClient).rpcRequest("accountId5", provideRequest("test5"), null);
+    Mockito.verify(websocketClient, Mockito.never()).rpcRequest("accountId3", provideRequest("test3"), null);
+  }
+  
+  /**
+   * Tests {@link SynchronizationThrottler#scheduleSynchronize(String, ObjectNode)}
+   */
+  @Test
+  void testRemovesActiveExpiredSynchronizationsFromQueue() throws Exception {
+    throttler.stop();
+    ServiceProvider.setNowInstantMock(null);
+    throttler = new SynchronizationThrottler(websocketClient, 0, new SynchronizationThrottler.Options() {{
+      synchronizationTimeoutInSeconds = 1;
+    }});
+    throttler.start();
+    
+    throttler.scheduleSynchronize("accountId1", provideRequest("test1")).join();
+    throttler.scheduleSynchronize("accountId2", provideRequest("test2")).join();
+    throttler.scheduleSynchronize("accountId3", provideRequest("test3"));
+    Mockito.verify(websocketClient).rpcRequest("accountId1", provideRequest("test1"), null);
+    Mockito.verify(websocketClient).rpcRequest("accountId2", provideRequest("test2"), null);
+    Mockito.verify(websocketClient, Mockito.never()).rpcRequest("accountId3", provideRequest("test3"), null);
+    
+    Thread.sleep(2000);
+    Mockito.verify(websocketClient).rpcRequest("accountId3", provideRequest("test3"), null);
   }
   
   /**

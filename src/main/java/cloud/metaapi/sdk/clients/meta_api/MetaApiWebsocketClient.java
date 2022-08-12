@@ -129,7 +129,7 @@ public class MetaApiWebsocketClient implements OutOfOrderListener {
      */
     public String domain = "agiliumtrade.agiliumtrade.ai";
     /**
-     * Optional region to connect to
+     * Optional region to connect to. By default is {@code vint-hill}
      */
     public String region;
     /**
@@ -202,7 +202,7 @@ public class MetaApiWebsocketClient implements OutOfOrderListener {
     this.httpClient = httpClient;
     this.application = opts.application;
     this.domain = opts.domain;
-    this.region = opts.region;
+    this.region = Js.or(opts.region, "vint-hill");
     this.hostname = "mt-client-api-v1";
     this.url = "https://" + this.hostname + "." + this.domain;
     this.token = token;
@@ -2127,8 +2127,12 @@ public class MetaApiWebsocketClient implements OutOfOrderListener {
     });
   }
   
-  protected String getServerUrl() throws Exception {
-    boolean isDefaultRegion = this.region == null;
+  /**
+   * Loads server url to connect the websocket client to
+   * @return Server url to connect the websocket client to
+   * @throws Exception If failed to load the server url
+   */
+  public String getServerUrl() throws Exception {
     if (this.region != null) {
       HttpRequestOptions opts = new HttpRequestOptions("https://mt-provisioning-api-v1." + this.domain +
         "/users/current/regions", Method.GET);
@@ -2140,24 +2144,23 @@ public class MetaApiWebsocketClient implements OutOfOrderListener {
         logger.error(errorMessage);
         throw new NotFoundException(errorMessage);
       }
-      if (this.region.equals(regions.get(0))) {
-        isDefaultRegion = true;
-      }
     }
     
     String url;
     if (this.useSharedClientApi) {
-      if (isDefaultRegion) {
+      if (this.region == null) {
         url = this.url;
       } else {
-        url = "https://" + this.hostname + "." + this.region + "." + this.domain;
+        List<String> domainLevels = Arrays.asList(domain.split("\\."));
+        String regionDomain = String.join(".", domainLevels.subList(1, domainLevels.size()));
+        url = "https://" + this.hostname + "." + this.region + "." + regionDomain;
       }
     } else {
       HttpRequestOptions opts = new HttpRequestOptions("https://mt-provisioning-api-v1." + 
         domain + "/users/current/servers/mt-client-api", Method.GET);
       opts.getHeaders().put("auth-token", token);
       JsonNode response = jsonMapper.readTree(httpClient.request(opts).join());
-      if (isDefaultRegion) {
+      if (this.region == null) {
         url = response.get("url").asText();
       } else {
         url = "https://" + response.get("hostname").asText() + "." + this.region + "." +

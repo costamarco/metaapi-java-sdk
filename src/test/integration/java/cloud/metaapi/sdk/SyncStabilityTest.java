@@ -40,6 +40,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
+import cloud.metaapi.sdk.clients.HttpClient;
 import cloud.metaapi.sdk.clients.RetryOptions;
 import cloud.metaapi.sdk.clients.TimeoutException;
 import cloud.metaapi.sdk.clients.meta_api.MetaApiWebsocketClient;
@@ -398,10 +399,9 @@ class SyncStabilityTest {
   static void beforeEach(boolean param) throws Exception {
     port++;
     startWebsocketServer();
-    api = new MetaApi("token", new MetaApi.Options() {{
+    
+    MetaApi.Options metaApiOptions = new MetaApi.Options() {{
       application = "application";
-      domain = "project-stock.agiliumlabs.cloud";
-      useSharedClientApi = true;
       requestTimeout = 10;
       retryOpts = new RetryOptions() {{
         retries = 3;
@@ -412,7 +412,19 @@ class SyncStabilityTest {
       eventProcessing = new EventProcessingOptions() {{
         sequentialProcessing = param;
       }};
-    }});
+    }};
+    HttpClient httpClient = new HttpClient(metaApiOptions.requestTimeout * 1000, metaApiOptions.connectTimeout * 1000,
+      metaApiOptions.retryOpts);
+    MetaApiWebsocketClient.ClientOptions websocketOptions = new MetaApiWebsocketClient.ClientOptions();
+    websocketOptions.application = metaApiOptions.application;
+    websocketOptions.requestTimeout = metaApiOptions.requestTimeout * 1000L;
+    websocketOptions.connectTimeout = metaApiOptions.connectTimeout * 1000L;
+    websocketOptions.retryOpts = metaApiOptions.retryOpts;
+    websocketOptions.eventProcessing = metaApiOptions.eventProcessing;
+    websocketClient = Mockito.spy(new MetaApiWebsocketClient(httpClient, "token", websocketOptions));
+    Mockito.doReturn("http://localhost:" + port).when(websocketClient).getServerUrl();
+    api = new MetaApi("token", metaApiOptions, websocketClient);
+    
     MetatraderAccountClient accountClient = Mockito.spy((MetatraderAccountClient) FieldUtils.readField(
       api.getMetatraderAccountApi(), "metatraderAccountClient", true));
     Mockito.doAnswer(new Answer<CompletableFuture<MetatraderAccountDto>>() {
@@ -434,8 +446,7 @@ class SyncStabilityTest {
       }
     }).when(accountClient).getAccount(Mockito.any());
     FieldUtils.writeField(api.getMetatraderAccountApi(), "metatraderAccountClient", accountClient, true);
-    websocketClient = (MetaApiWebsocketClient) FieldUtils.readField(api, "metaApiWebsocketClient", true);
-    websocketClient.setUrl("http://localhost:" + port);
+    FieldUtils.writeField(websocketClient, "subscriptionManager", new SubscriptionManager(websocketClient), true);
     FieldUtils.writeField(websocketClient, "resetDisconnectTimerTimeout", 7500, true);
     fakeServer = new FakeServer();
     fakeServer.start();

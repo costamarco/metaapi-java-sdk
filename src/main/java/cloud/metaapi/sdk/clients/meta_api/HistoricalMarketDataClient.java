@@ -11,6 +11,7 @@ import cloud.metaapi.sdk.clients.HttpRequestOptions.Method;
 import cloud.metaapi.sdk.clients.meta_api.models.MetatraderCandle;
 import cloud.metaapi.sdk.clients.meta_api.models.MetatraderTick;
 import cloud.metaapi.sdk.clients.models.IsoTime;
+import cloud.metaapi.sdk.util.Js;
 
 /**
  * metaapi.cloud historical market data API client
@@ -26,6 +27,7 @@ public class HistoricalMarketDataClient extends MetaApiClient {
    */
   public HistoricalMarketDataClient(HttpClient httpClient, String token, String region, String domain) {
     super(httpClient, token, domain);
+    region = Js.or(region, "vint-hill");
     if (region != null) {
       List<String> domainLevels = Arrays.asList(domain.split("\\."));
       domain = String.join(".", domainLevels.subList(1, domainLevels.size()));
