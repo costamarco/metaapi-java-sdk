@@ -135,7 +135,7 @@ class MetaApiWebsocketClientTest {
   void setUp() throws Throwable {
     MetaApiWebsocketClient.resetDisconnectTimerTimeout = initResetDisconnectTimerTimeout;
     httpClient = Mockito.mock(HttpClient.class);
-    client = new MetaApiWebsocketClient(httpClient, "token", new MetaApiWebsocketClient.ClientOptions() {{
+    client = Mockito.spy(new MetaApiWebsocketClient(httpClient, "token", new MetaApiWebsocketClient.ClientOptions() {{
       application = "application";
       domain = "project-stock.agiliumlabs.cloud";
       requestTimeout = 6000L;
@@ -146,8 +146,8 @@ class MetaApiWebsocketClientTest {
         maxDelayInSeconds = 3;
       }};
       useSharedClientApi = true;
-    }});
-    client.setUrl("http://localhost:6784");
+    }}));
+    Mockito.doReturn("http://localhost:6784").when(client).getServerUrl();
     client.socketInstancesByAccounts = Maps.newHashMap("accountId", 0);
     client.connect().join();
     SynchronizationThrottler clientSyncThrottler = Mockito
@@ -211,47 +211,20 @@ class MetaApiWebsocketClientTest {
   }
   
   /**
-    * Tests {@link MetaApiWebsocketClient#getServerUrl}
-    */
-  @ParameterizedTest
-  @MethodSource("provideMetatraderPosition")
-  void testConnectsToDedicatedServer(MetatraderPosition position) throws Exception {
+   * Tests {@link MetaApiWebsocketClient#getServerUrl}
+   */
+  @Test
+  void testConnectsToDedicatedServer() throws Exception {
+    ObjectNode urlResponse = jsonMapper.createObjectNode();
+    urlResponse.put("hostname", "hostname1");
+    urlResponse.put("domain", "domain1");
     Mockito.when(httpClient.request(Mockito.any()))
-      .thenReturn(CompletableFuture.completedFuture("{\"url\": \"http://localhost:6784\"}"));
-    List<MetatraderPosition> positions = Arrays.asList(position);
-    server.disconnect();
-    client = new MetaApiWebsocketClient(httpClient, "token", new MetaApiWebsocketClient.ClientOptions() {{
-      application = "application";
-      domain = "project-stock.agiliumlabs.cloud";
-      requestTimeout = 15000L;
-      connectTimeout = 15000L;
-      useSharedClientApi = false;
-      retryOpts = new RetryOptions() {{
-        retries = 3;
-        minDelayInSeconds = 1;
-        maxDelayInSeconds = 3;
-      }};
-    }});
-    io.addEventListener("request", Object.class, new DataListener<Object>() {
-      @Override
-      public void onData(SocketIOClient client, Object data, AckRequest ackSender) throws Exception {
-        JsonNode request = jsonMapper.valueToTree(data);
-        if (  request.get("type").asText().equals("getPositions") 
-            && request.get("accountId").asText().equals("accountId")
-            && request.get("application").asText().equals("RPC")
-          ) {
-          ObjectNode response = jsonMapper.createObjectNode();
-          response.put("type", "response");
-          response.set("accountId", request.get("accountId"));
-          response.set("requestId", request.get("requestId"));
-          response.set("positions", jsonMapper.valueToTree(positions));
-          client.sendEvent("response", response.toString());
-        }
-      }
-    });
-    List<MetatraderPosition> actual = client.getPositions("accountId").join();
-    assertThat(actual).usingRecursiveComparison().isEqualTo(positions);
-    Mockito.verify(httpClient).request(Mockito.any());
+      .thenReturn(CompletableFuture.completedFuture(urlResponse.toString()));
+    Mockito.when(httpClient.requestJson(Mockito.any(), Mockito.any()))
+      .thenReturn(CompletableFuture.completedFuture(new String[] {"vint-hill"}));
+    MetaApiWebsocketClient overridenClient = new MetaApiWebsocketClient(httpClient, "token",
+      new MetaApiWebsocketClient.ClientOptions() {{useSharedClientApi = false;}});
+    assertEquals("https://hostname1.vint-hill.domain1", overridenClient.getServerUrl());
   }
 
   /**
@@ -288,35 +261,6 @@ class MetaApiWebsocketClientTest {
   }
   
   /**
-   * Test {@link MetaApiWebsocketClient#getServerUrl}
-   */
-  @Test
-  void testConnectsToLegacyUrlIfDefaultRegionSelected() throws Exception {
-    client.close();
-    Mockito.when(httpClient.requestJson(Mockito.any(), Mockito.any()))
-      .thenAnswer(new Answer<CompletableFuture<String[]>>() {
-      public CompletableFuture<String[]> answer(InvocationOnMock invocation) throws Throwable {
-        HttpRequestOptions opts = invocation.getArgument(0, HttpRequestOptions.class);
-        if (opts.getUrl().equals("https://mt-provisioning-api-v1.project-stock.agiliumlabs.cloud/users/current/" +
-          "regions")) {
-          return CompletableFuture.completedFuture(new String[] {"canada", "us-west"});
-        }
-        return CompletableFuture.completedFuture(null);
-      }
-    });
-    client = new MetaApiWebsocketClient(httpClient, "token", new MetaApiWebsocketClient.ClientOptions() {{
-      application = "application";
-      region = "canada";
-      domain = "project-stock.agiliumlabs.cloud";
-      requestTimeout = 15000L;
-      connectTimeout = 15000L;
-      useSharedClientApi = true;
-    }});
-    String url = client.getServerUrl();
-    assertEquals(url, "https://mt-client-api-v1.project-stock.agiliumlabs.cloud");
-  };
-  
-  /**
    * Tests {@link MetaApiWebsocketClient#getServerUrl}
    */
   @Test
@@ -342,7 +286,7 @@ class MetaApiWebsocketClientTest {
       useSharedClientApi = true;
     }});
     String url = client.getServerUrl();
-    assertEquals(url, "https://mt-client-api-v1.us-west.project-stock.agiliumlabs.cloud");
+    assertEquals(url, "https://mt-client-api-v1.us-west.agiliumlabs.cloud");
   };
   
   /**
@@ -2921,7 +2865,7 @@ class MetaApiWebsocketClientTest {
     server.disconnect();
     Mockito.when(httpClient.request(Mockito.any()))
       .thenReturn(CompletableFuture.completedFuture("{\"url\": \"http://localhost:6784\"}"));
-    client = new MetaApiWebsocketClient(httpClient, "token", new MetaApiWebsocketClient.ClientOptions() {{
+    client = Mockito.spy(new MetaApiWebsocketClient(httpClient, "token", new MetaApiWebsocketClient.ClientOptions() {{
       application = "application";
       domain = "project-stock.agiliumlabs.cloud";
       requestTimeout = 6000L;
@@ -2929,7 +2873,8 @@ class MetaApiWebsocketClientTest {
       useSharedClientApi = false;
       retryOpts = new RetryOptions() {{retries = 3; minDelayInSeconds = 1; maxDelayInSeconds = 3;}};
       eventProcessing = new MetaApiWebsocketClient.EventProcessingOptions() {{sequentialProcessing = true;}};
-    }});
+    }}));
+    Mockito.doReturn("http://localhost:6784").when(client).getServerUrl();
     spyClientPacketOrderer();
     io.addEventListener("request", Object.class, new DataListener<Object>() {
       @Override

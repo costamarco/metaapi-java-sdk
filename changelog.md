@@ -1,3 +1,6 @@
+14.0.3
+  - set the default region to `vint-hill`
+
 14.0.2
   - fixed out of order synchronization packets came from the previous synchronizations
   - fixed region support in historical market data client

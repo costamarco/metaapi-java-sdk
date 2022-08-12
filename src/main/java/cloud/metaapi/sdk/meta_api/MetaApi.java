@@ -18,6 +18,7 @@ import cloud.metaapi.sdk.clients.meta_api.MetatraderDemoAccountClient;
 import cloud.metaapi.sdk.clients.meta_api.ProvisioningProfileClient;
 import cloud.metaapi.sdk.clients.meta_api.SynchronizationThrottler;
 import cloud.metaapi.sdk.util.Async;
+import cloud.metaapi.sdk.util.Js;
 
 /**
  * MetaApi MetaTrader API SDK
@@ -45,7 +46,7 @@ public class MetaApi {
      */
     public String domain = "agiliumtrade.agiliumtrade.ai";
     /**
-     * Optional region to connect to
+     * Optional region to connect to. By default is {@code vint-hill}
      */
     public String region;
     /**
@@ -105,7 +106,7 @@ public class MetaApi {
    */
   public MetaApi(String token) throws IOException {
     try {
-      initialize(token, null);
+      initialize(token, null, null);
     } catch (ValidationException e) {
       logger.error("Application name is incorrect", e);
     }
@@ -119,7 +120,18 @@ public class MetaApi {
    * @throws IOException if packet logger is enabled and failed to create the log directory
    */
   public MetaApi(String token, Options opts) throws ValidationException, IOException {
-    initialize(token, opts);
+    initialize(token, opts, null);
+  }
+  
+  /**
+   * Constructs MetaApi class instance with overriden dependencies. Used for tests
+   * @param token authorization token
+   * @param opts application options, or {@code null}
+   * @param metaApiWebsocketClient websocket client, or {@code null}
+   * @throws Exception if instance initialization failed
+   */
+  public MetaApi(String token, Options opts, MetaApiWebsocketClient metaApiWebsocketClient) throws Exception {
+    initialize(token, opts, metaApiWebsocketClient);
   }
   
   /**
@@ -163,7 +175,8 @@ public class MetaApi {
     Async.shutdownExecutor();
   }
   
-  private void initialize(String token, Options opts) throws ValidationException, IOException {
+  private void initialize(String token, Options opts, MetaApiWebsocketClient metaApiWebsocketClient)
+      throws ValidationException, IOException {
     if (opts == null) {
       opts = new Options();
     }
@@ -195,7 +208,8 @@ public class MetaApi {
     websocketOptions.eventProcessing = opts.eventProcessing;
     websocketOptions.useSharedClientApi = opts.useSharedClientApi;
     websocketOptions.region = opts.region;
-    metaApiWebsocketClient = new MetaApiWebsocketClient(httpClient, token, websocketOptions);
+    metaApiWebsocketClient = Js.or(metaApiWebsocketClient, new MetaApiWebsocketClient(httpClient, token,
+       websocketOptions));
     provisioningProfileApi = new ProvisioningProfileApi(new ProvisioningProfileClient(httpClient, token, opts.domain));
     connectionRegistry = new ConnectionRegistry(metaApiWebsocketClient, opts.application);
     HistoricalMarketDataClient historicalMarketDataClient = new HistoricalMarketDataClient(
