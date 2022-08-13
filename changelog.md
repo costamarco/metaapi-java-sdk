@@ -1,3 +1,6 @@
+14.0.4
+  - fixed dependency vulnerabilities
+
 14.0.3
   - set the default region to `vint-hill`
 
